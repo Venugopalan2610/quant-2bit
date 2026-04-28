@@ -1,4 +1,55 @@
-# qtip-olmoe
+# quant-olmoe
+
+This repository hosts two related projects on extreme-low-bit LLM
+compression:
+
+## 1. BCJR-QAT (Apr 2026)
+
+> *BCJR-QAT: A Differentiable Relaxation of Trellis-Coded Weight Quantization*
+
+A differentiable relaxation of trellis-coded weight quantization that
+replaces the non-differentiable Viterbi argmax with the BCJR
+forward--backward sum-product algorithm at temperature *T*, producing a
+soft codeword equal to the Boltzmann expectation over trellis paths.
+
+**Headline result:** with the right schedule (skip the high-*T* phase to
+avoid an overshoot we diagnose), single-layer BCJR-QAT beats QTIP-PTQ on
+Llama-3.2-1B layer 4 at 2 bpw by **−0.084 PPL** on WikiText-2
+(10.13 vs. 10.22). Multi-layer compounding is super-additive.
+
+- `src/bcjr/` — BCJR kernel (forward--backward, Triton-fused, autograd
+  node, parity-verified within fp32 noise; 6.57× speedup over reference)
+- `src/qat/` — QAT pipeline:
+  `QATDenseDecoderLayer`, `quantized_linear.py`, `train_llama_single_layer.py`,
+  `train_e2e_kl.py`
+- `src/eval/install_bcjr.py`, `bootstrap_ppl.py` — eval infrastructure
+- `scripts/eval_llama_{trajectory,multilayer,step0_baseline}.py` — eval helpers
+- `scripts/vast_train_llama_skip_highT.sh` — the headline experiment recipe
+- `src/tripwires/test_bcjr_*.py` — kernel parity tests
+
+**Reproducing the headline result** (Llama-3.2-1B layer 4 at 2 bpw):
+
+```bash
+# Local 4080: ~10 h for the 4080 baseline (3-step PTQ-init);
+# Cloud H100 SXM: ~5 h for the skip-high-T 10-step run that wins.
+# See scripts/vast_train_llama_skip_highT.sh for the full recipe.
+bash scripts/vast_setup_llama.sh
+bash scripts/vast_train_llama_skip_highT.sh
+
+# Then evaluate:
+python -m scripts.eval_llama_trajectory \
+    --ckpt-dir cache/llama_bcjr_skipT \
+    --target-layer 4 \
+    --output results/llama_skipT_trajectory.json
+```
+
+Quantized snapshots, trajectory checkpoints, and per-window NLLs (for
+bootstrap analysis) are released at
+[Venugopalan2610](https://huggingface.co/Venugopalan2610) on HuggingFace.
+
+---
+
+## 2. qtip-olmoe (prior work — used as PTQ baseline in the BCJR-QAT paper)
 
 2-bit weight-only quantization of
 [OLMoE-1B-7B](https://huggingface.co/allenai/OLMoE-1B-7B-0125) on a single

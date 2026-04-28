@@ -23,6 +23,7 @@ def evaluate_perplexity(
     device="cuda:0",
     max_windows=None,
     verbose=True,
+    save_per_window_path=None,
 ):
     """Compute perplexity on a flat token stream.
 
@@ -56,6 +57,9 @@ def evaluate_perplexity(
     total_tokens = 0
     t0 = time.time()
     last_print = t0
+    # Per-window NLL + token-count arrays for bootstrap noise estimation.
+    per_window_nll = []
+    per_window_tokens = []
 
     model.eval()
     for w in range(n_windows):
@@ -67,12 +71,18 @@ def evaluate_perplexity(
         logits = out.logits[0, :-1, :]  # (seq_len-1, vocab)
         targets = window[0, 1:]          # (seq_len-1,)
 
+        # With device_map="auto", logits may land on CPU — align devices.
+        if logits.device != targets.device:
+            targets = targets.to(logits.device)
+
         # NLL summed over the window's predictable tokens
         nll = F.cross_entropy(
             logits.float(), targets, reduction="sum",
         ).item()
         total_nll += nll
         total_tokens += targets.numel()
+        per_window_nll.append(nll)
+        per_window_tokens.append(int(targets.numel()))
 
         if verbose and time.time() - last_print > 10.0:
             elapsed = time.time() - t0
@@ -92,6 +102,15 @@ def evaluate_perplexity(
         "n_windows": n_windows,
         "wall_seconds": wall,
     }
+    if save_per_window_path is not None:
+        import numpy as np
+        np.savez(
+            save_per_window_path,
+            nll=np.array(per_window_nll, dtype=np.float64),
+            tokens=np.array(per_window_tokens, dtype=np.int64),
+        )
+        if verbose:
+            print(f"  per-window NLLs saved to {save_per_window_path}")
     if verbose:
         print(f"  PPL = {ppl:.4f} ({total_tokens:,} tokens, {wall:.0f}s)")
     return ppl, stats

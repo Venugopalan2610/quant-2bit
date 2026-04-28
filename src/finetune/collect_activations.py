@@ -195,3 +195,189 @@ def collect_layer_activations(model, rotary_emb, layer_idx, cfg, device,
         torch.cuda.empty_cache()
 
     return captures
+
+
+class MoEIOCollector:
+    """Reservoir collector for (X_moe, Y_moe) pairs at the MoE block boundary."""
+
+    def __init__(self, max_tokens):
+        self.max_tokens = max_tokens
+        self.xs = []
+        self.ys = []
+        self.count = 0
+
+    def add(self, x, y):
+        """x, y: (B, T, H) or (N, H) fp32 GPU. Flattens and subsamples."""
+        x = x.reshape(-1, x.shape[-1])
+        y = y.reshape(-1, y.shape[-1])
+        remaining = self.max_tokens - self.count
+        if remaining <= 0:
+            return
+        n = x.shape[0]
+        if n > remaining:
+            idx = torch.randperm(n, device=x.device)[:remaining]
+            x = x[idx]
+            y = y[idx]
+        self.xs.append(x.detach().cpu())
+        self.ys.append(y.detach().cpu())
+        self.count += x.shape[0]
+
+    def finalize(self):
+        if self.count == 0:
+            return None, None
+        X = torch.cat(self.xs, dim=0)
+        Y = torch.cat(self.ys, dim=0)
+        return X, Y
+
+
+def collect_moe_io(model, rotary_emb, layer_idx, cfg, device,
+                   max_tokens=16384, max_shards=None):
+    """Capture (X_moe, Y_moe) at the MoE block boundary for one layer.
+
+    X_moe: input to `layer.mlp` (post_attention_layernorm output), flattened (N, H)
+    Y_moe: output of `layer.mlp` (before residual add), flattened (N, H)
+
+    Returns (X_moe, Y_moe) CPU fp32 tensors of shape (N, H) with N <= max_tokens.
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
+    in_dir = os.path.join(HIDDEN_DIR, f"layer_{layer_idx:02d}_input")
+    if not os.path.exists(in_dir):
+        raise FileNotFoundError(
+            f"Hidden states for layer {layer_idx} missing at {in_dir}. "
+            f"Run regenerate_hidden_states.py first."
+        )
+
+    meta = torch.load(os.path.join(in_dir, "meta.pt"), weights_only=True)
+    seq_len = meta["seq_len"]
+    n_shards = meta["n_shards"]
+    if max_shards is not None:
+        n_shards = min(n_shards, max_shards)
+
+    layer = copy.deepcopy(model.model.layers[layer_idx]).to(
+        device=device, dtype=torch.float32,
+    )
+
+    collector = MoEIOCollector(max_tokens=max_tokens)
+
+    def hook(module, inputs, output):
+        x_in = inputs[0] if isinstance(inputs, tuple) else inputs
+        collector.add(x_in.to(torch.float32), output.to(torch.float32))
+
+    handle = layer.mlp.register_forward_hook(hook)
+    position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0)
+
+    t_start = time.time()
+    try:
+        with torch.no_grad():
+            for shard_idx in range(n_shards):
+                if collector.count >= max_tokens:
+                    print(f"    saturated at shard {shard_idx}/{n_shards}")
+                    break
+                shard_bf16 = torch.load(
+                    os.path.join(in_dir, f"shard_{shard_idx:04d}.pt"),
+                    weights_only=True,
+                )
+                B = shard_bf16.shape[0]
+                shard_fp32 = shard_bf16.to(device=device, dtype=torch.float32)
+                del shard_bf16
+
+                pos_ids_batch = position_ids.expand(B, -1)
+                cos, sin = rotary_emb(shard_fp32, pos_ids_batch)
+
+                _ = layer(
+                    shard_fp32,
+                    attention_mask=None,
+                    position_ids=pos_ids_batch,
+                    position_embeddings=(cos, sin),
+                    use_cache=False,
+                )
+                del shard_fp32, cos, sin
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+    finally:
+        handle.remove()
+
+    X, Y = collector.finalize()
+    elapsed = time.time() - t_start
+    print(f"    collected {collector.count} tokens in {elapsed:.1f}s")
+
+    del layer, collector
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    return X, Y
+
+
+def collect_layer_io(model, rotary_emb, layer_idx, cfg, device,
+                     max_shards=None):
+    """Capture full decoder-layer I/O as 3D shards (needed for attention).
+
+    Returns:
+        shards_X: list of (B, T, H) fp32 CPU tensors  — layer inputs
+        shards_Y: list of (B, T, H) fp32 CPU tensors  — layer outputs (post-residuals)
+        seq_len: int
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
+    in_dir = os.path.join(HIDDEN_DIR, f"layer_{layer_idx:02d}_input")
+    if not os.path.exists(in_dir):
+        raise FileNotFoundError(
+            f"Hidden states for layer {layer_idx} missing at {in_dir}. "
+            f"Run regenerate_hidden_states.py first."
+        )
+
+    meta = torch.load(os.path.join(in_dir, "meta.pt"), weights_only=True)
+    seq_len = meta["seq_len"]
+    n_shards = meta["n_shards"]
+    if max_shards is not None:
+        n_shards = min(n_shards, max_shards)
+
+    layer = copy.deepcopy(model.model.layers[layer_idx]).to(
+        device=device, dtype=torch.float32,
+    )
+
+    position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0)
+    shards_X, shards_Y = [], []
+
+    t_start = time.time()
+    with torch.no_grad():
+        for shard_idx in range(n_shards):
+            shard_bf16 = torch.load(
+                os.path.join(in_dir, f"shard_{shard_idx:04d}.pt"),
+                weights_only=True,
+            )
+            B = shard_bf16.shape[0]
+            shard_fp32 = shard_bf16.to(device=device, dtype=torch.float32)
+            del shard_bf16
+
+            pos_ids_batch = position_ids.expand(B, -1)
+            cos, sin = rotary_emb(shard_fp32, pos_ids_batch)
+
+            y = layer(
+                shard_fp32,
+                attention_mask=None,
+                position_ids=pos_ids_batch,
+                position_embeddings=(cos, sin),
+                use_cache=False,
+            )
+            if isinstance(y, tuple):
+                y = y[0]
+
+            shards_X.append(shard_fp32.detach().cpu())
+            shards_Y.append(y.detach().cpu())
+            del shard_fp32, cos, sin, y
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
+    elapsed = time.time() - t_start
+    total_tokens = sum(s.shape[0] * s.shape[1] for s in shards_X)
+    print(f"    collected {len(shards_X)} shards ({total_tokens} tokens) in {elapsed:.1f}s")
+
+    del layer
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    return shards_X, shards_Y, seq_len
