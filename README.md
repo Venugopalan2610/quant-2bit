@@ -318,9 +318,9 @@ The LaTeX source of the paper is tracked separately in a sister directly. Not vi
 ## Citation (Still publish pending)
 
 ```bibtex
-@article{iyengar2026qtipmoe,
-  title   = {2-Bit MoE Quantization on Consumer GPUs via Per-Expert
-             Hessian Calibration},
+@article{iyengar2026bcjrqat,
+  title   = {BCJR-QAT: A Differentiable Relaxation of Trellis-Coded
+             Weight Quantization},
   author  = {Iyengar, Venugopalan},
   year    = {2026},
   journal = {arXiv preprint}

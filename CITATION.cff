@@ -1,36 +1,43 @@
 cff-version: 1.2.0
 message: "If you use this software or the accompanying paper, please cite the following."
-title: "qtip-olmoe: 2-Bit MoE Quantization on Consumer GPUs via Per-Expert Hessian Calibration"
+title: "quant-olmoe: BCJR-QAT and 2-bit trellis-coded quantization on consumer GPUs"
 abstract: >-
-  A 2-bit weight-only quantization pipeline for the OLMoE-1B-7B
-  mixture-of-experts model, combining per-expert routing-conditioned
-  Hessian calibration with QTIP-style trellis-coded quantization.
-  Runs end-to-end on a single consumer GPU with 12 GB of VRAM.
+  This repository hosts two related projects on extreme-low-bit LLM
+  compression. (1) BCJR-QAT: a differentiable relaxation of
+  trellis-coded weight quantization that replaces the non-differentiable
+  Viterbi argmax with the BCJR forward-backward sum-product algorithm at
+  temperature T, with a fused Triton kernel and end-to-end forward-KL
+  distillation results on Llama-3.2-1B at 2 bpw. (2) qtip-olmoe (prior
+  work, used as the QTIP-PTQ baseline): a 2-bit weight-only PTQ pipeline
+  for OLMoE-1B-7B with per-expert routing-conditioned Hessian calibration,
+  runnable end-to-end on a single consumer GPU.
 type: software
 authors:
   - family-names: Iyengar
     given-names: Venugopalan
-version: "0.1.0"
-date-released: "2026-04-13"
+version: "0.2.0"
+date-released: "2026-04-28"
 license: Apache-2.0
-repository-code: "https://github.com/TODO-USER/qtip-olmoe"
+repository-code: "https://github.com/Venugopalan2610/quant-olmoe"
 keywords:
   - quantization
+  - quantization-aware-training
+  - trellis-coded-quantization
+  - bcjr
   - mixture-of-experts
   - olmoe
-  - post-training-quantization
-  - trellis-coded-quantization
+  - llama
   - consumer-gpu
 preferred-citation:
   type: article
-  title: "2-Bit MoE Quantization on Consumer GPUs via Per-Expert Hessian Calibration"
+  title: "BCJR-QAT: A Differentiable Relaxation of Trellis-Coded Weight Quantization"
   authors:
     - family-names: Iyengar
       given-names: Venugopalan
   year: 2026
   month: 4
   journal: "arXiv preprint"
-  url: "https://github.com/TODO-USER/qtip-olmoe"
+  url: "https://github.com/Venugopalan2610/quant-olmoe"
 references:
   - type: conference-paper
     title: "QTIP: Quantization with Trellises and Incoherence Processing"
