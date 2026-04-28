@@ -99,7 +99,7 @@ drift.
 ## Install
 
 ```bash
-git clone https://github.com/<TODO-USER>/qtip-olmoe.git
+git clone https://github.com/Venugopalan2610/qtip-olmoe.git
 cd qtip-olmoe
 
 python -m venv .venv && source .venv/bin/activate
@@ -122,7 +122,7 @@ If you want the numbers but not the 18-hour run, the 4.5 GB quantized
 model is published on Hugging Face:
 
 ```bash
-python -m src.eval.install_quantized --hf-repo <TODO-USER>/qtip-olmoe-2bit
+python -m src.eval.install_quantized --hf-repo Venugopalan2610/qtip-olmoe-2bit
 python -m src.eval.run_ppl --config 2bit_noft --dataset wikitext2
 python -m src.eval.run_ppl --config 2bit_noft --dataset c4
 ```
@@ -313,10 +313,9 @@ report.
 └── fast-hadamard-transform/  upstream, BSD-3-Clause, built from source
 ```
 
-The LaTeX source of the paper is tracked separately in
-[`qtip-moe-paper`](https://github.com/<TODO-USER>/qtip-moe-paper).
+The LaTeX source of the paper is tracked separately in a sister directly. Not visible here.
 
-## Citation
+## Citation (Still publish pending)
 
 ```bibtex
 @article{iyengar2026qtipmoe,
