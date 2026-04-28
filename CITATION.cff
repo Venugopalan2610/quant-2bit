@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software or the accompanying paper, please cite the following."
-title: "quant-olmoe: BCJR-QAT and 2-bit trellis-coded quantization on consumer GPUs"
+title: "quant-2bit: BCJR-QAT and 2-bit trellis-coded quantization on consumer GPUs"
 abstract: >-
   This repository hosts two related projects on extreme-low-bit LLM
   compression. (1) BCJR-QAT: a differentiable relaxation of
@@ -18,7 +18,7 @@ authors:
 version: "0.2.0"
 date-released: "2026-04-28"
 license: Apache-2.0
-repository-code: "https://github.com/Venugopalan2610/quant-olmoe"
+repository-code: "https://github.com/Venugopalan2610/quant-2bit"
 keywords:
   - quantization
   - quantization-aware-training
@@ -37,7 +37,7 @@ preferred-citation:
   year: 2026
   month: 4
   journal: "arXiv preprint"
-  url: "https://github.com/Venugopalan2610/quant-olmoe"
+  url: "https://github.com/Venugopalan2610/quant-2bit"
 references:
   - type: conference-paper
     title: "QTIP: Quantization with Trellises and Incoherence Processing"

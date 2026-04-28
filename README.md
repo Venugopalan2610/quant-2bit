@@ -1,4 +1,4 @@
-# quant-olmoe
+# quant-2bit
 
 This repository hosts two related projects on extreme-low-bit LLM
 compression:
