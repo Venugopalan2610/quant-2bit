@@ -99,8 +99,8 @@ drift.
 ## Install
 
 ```bash
-git clone https://github.com/Venugopalan2610/qtip-olmoe.git
-cd qtip-olmoe
+git clone https://github.com/Venugopalan2610/quant-2bit.git
+cd quant-2bit
 
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
