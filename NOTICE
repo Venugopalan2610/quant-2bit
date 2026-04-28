@@ -1,4 +1,4 @@
-qtip-olmoe
+quant-olmoe
 Copyright 2026 Venugopalan Iyengar
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -8,23 +8,39 @@ repository, and is also available at:
 
     http://www.apache.org/licenses/LICENSE-2.0
 
+This repository hosts two related projects on extreme-low-bit LLM
+compression:
+
+  1. BCJR-QAT --- a differentiable relaxation of trellis-coded weight
+     quantization (this paper, Apr 2026).
+  2. qtip-olmoe --- 2-bit weight-only PTQ for OLMoE-1B-7B with per-expert
+     routing-conditioned Hessian calibration (prior work, used as the
+     PTQ baseline in the BCJR-QAT paper).
+
 Algorithmic attribution
 -----------------------
 
-This repository implements the trellis-coded quantization algorithms
-described in QTIP (Tseng et al., NeurIPS 2024), adapted to per-expert
-Hessian calibration for the OLMoE-1B-7B mixture-of-experts architecture.
+The trellis-coded quantization algorithms (Viterbi encoder, BlockLDLQ
+Hessian-aware rounding, HYB computed-Gaussian trellis, incoherence
+processing) follow QTIP (Tseng et al., NeurIPS 2024).
 
     QTIP paper:   https://arxiv.org/abs/2406.11235
     QTIP code:    https://github.com/Cornell-RelaxML/qtip (GPL-3.0)
 
-The code under src/ (codebooks, Viterbi encoder, BlockLDLQ, CUDA
-kernels, OLMoE adapter, calibration pipeline, evaluation harness) is
-an independent clean-room implementation of the algorithms described
-in the QTIP paper. No source code from the upstream QTIP repository
-is used, linked, or redistributed here; the GPL-3.0 license of the
-upstream QTIP project therefore does not transitively apply to this
-work.
+The BCJR forward-backward (sum-product) algorithm used in the
+training-time relaxation follows Bahl, Cocke, Jelinek, Raviv (1974);
+the algorithm is also a direct instance of the transfer-matrix
+computation for 1D spin chains used in statistical mechanics.
+
+    BCJR paper:   https://doi.org/10.1109/TIT.1974.1055186
+
+The code under src/ (BCJR kernel, codebooks, Viterbi encoder,
+BlockLDLQ, CUDA/Triton kernels, OLMoE and Llama adapters, QAT
+pipeline, calibration pipeline, evaluation harness) is an independent
+clean-room implementation of the algorithms described in the QTIP and
+BCJR papers. No source code from the upstream QTIP repository is used,
+linked, or redistributed here; the GPL-3.0 license of the upstream
+QTIP project therefore does not transitively apply to this work.
 
 Third-party components
 ----------------------
@@ -33,13 +49,29 @@ Third-party components
     BSD-3-Clause, Dao AI Lab
     https://github.com/Dao-AILab/fast-hadamard-transform
 
+- Triton (used for the fused BCJR kernel; pip dependency, not bundled):
+    MIT, OpenAI / contributors
+    https://github.com/triton-lang/triton
+
+- bitsandbytes (used for AdamW8bit during QAT; pip dependency, not bundled):
+    MIT, Tim Dettmers / Hugging Face
+    https://github.com/bitsandbytes-foundation/bitsandbytes
+
 - OLMoE-1B-7B-0125 model weights (loaded via Hugging Face, not bundled):
     Apache-2.0, Allen Institute for AI
     https://huggingface.co/allenai/OLMoE-1B-7B-0125
 
+- Llama-3.2-1B model weights (loaded via Hugging Face, not bundled):
+    Llama 3.2 Community License, Meta Platforms
+    https://huggingface.co/meta-llama/Llama-3.2-1B
+
 - C4 calibration data (loaded via Hugging Face, not bundled):
     ODC-BY, AllenAI / Common Crawl
     https://huggingface.co/datasets/allenai/c4
+
+- FineWeb calibration data (loaded via Hugging Face, not bundled):
+    ODC-BY, Hugging Face
+    https://huggingface.co/datasets/HuggingFaceFW/fineweb
 
 - WikiText-2 evaluation data (loaded via Hugging Face, not bundled):
     CC BY-SA 4.0, Salesforce Research
