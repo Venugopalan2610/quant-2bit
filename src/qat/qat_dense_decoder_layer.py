@@ -105,7 +105,13 @@ class QATDenseDecoderLayer(nn.Module):
             yield (f"mlp_{name}", getattr(self.layer.mlp, name))
 
     def trainable_parameters(self):
-        return [ql.W_latent for _, ql in self._all_qls()]
+        params = []
+        for _, ql in self._all_qls():
+            params.append(ql.W_latent)
+            # Scalar-faithful arm also trains a per-group clip (empty otherwise).
+            if hasattr(ql, "scalar_extra_parameters"):
+                params.extend(ql.scalar_extra_parameters())
+        return params
 
     def prime_cache(self):
         """Populate all W_q caches."""

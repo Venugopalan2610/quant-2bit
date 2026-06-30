@@ -89,6 +89,14 @@ def convert_layer_to_ste(qat_layer):
         ql.set_quant_mode("ste")
 
 
+def convert_layer_to_scalar(qat_layer, mode, group_size=128, n_bits=2):
+    """Flip every QL to a scalar baseline arm (matched-budget comparison).
+    mode: 'scalar_ctrl' (RHT + global scale, 2.0b) or 'scalar_faithful'
+    (native per-group learned clip). See src/qat/scalar_quant.py."""
+    for _, ql in _all_qls(qat_layer):
+        ql.set_scalar_mode(mode, group_size=group_size, n_bits=n_bits)
+
+
 def set_layer_temperature(qat_layer, T):
     """Update BCJR temperature on every QL in the layer."""
     for _, ql in _all_qls(qat_layer):

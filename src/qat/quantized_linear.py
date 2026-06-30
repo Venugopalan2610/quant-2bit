@@ -40,6 +40,9 @@ from src.qat.ste import (
 )
 from src.bcjr.bcjr_quant import bcjr_quantize_weight, BCJR_CHUNK
 from src.bcjr.forward_backward import build_pred_succ_tables
+from src.qat.scalar_quant import (
+    scalar_quant_controlled, scalar_quant_faithful,
+)
 
 try:
     from fast_hadamard_transform import hadamard_transform as _fht
@@ -96,9 +99,16 @@ class QuantizedLinear(nn.Module):
         self.ip_mode = bool(ip_mode)
         self.quant_mode = str(quant_mode)
         self.bcjr_chunk = int(bcjr_chunk)
-        assert self.quant_mode in ("ste", "bcjr"), f"bad quant_mode {quant_mode}"
-        if self.quant_mode == "bcjr":
-            assert not self.ip_mode, "BCJR mode requires ip_mode=False (pre-IP data flow)"
+        # Scalar baseline config (matched-budget comparison arms). n_bits is
+        # plumbed so the sub-2-bit pivot is one flag away. clip is a learnable
+        # parameter, created lazily by set_scalar_mode('scalar_faithful').
+        self.scalar_n_bits = 2
+        self.scalar_group_size = 128
+        self.clip = None
+        _VALID_MODES = ("ste", "bcjr", "scalar_ctrl", "scalar_faithful")
+        assert self.quant_mode in _VALID_MODES, f"bad quant_mode {quant_mode}"
+        if self.quant_mode in ("bcjr", "scalar_ctrl", "scalar_faithful"):
+            assert not self.ip_mode, f"{self.quant_mode} requires ip_mode=False (pre-IP)"
 
         # W_latent is the trainable FP parameter.
         self.W_latent = nn.Parameter(
@@ -199,6 +209,20 @@ class QuantizedLinear(nn.Module):
                 preds=self._bcjr_preds, succs=self._bcjr_succs,
                 chunk_size=self.bcjr_chunk,
             )
+        elif self.quant_mode == "scalar_ctrl":
+            # Uniform n-bit in the SAME RHT basis + global scale as the trellis
+            # path; only the quantizer differs. Identity-STE grad. Exactly
+            # n_bits/weight. See src/qat/scalar_quant.py.
+            W_q = scalar_quant_controlled(
+                self.W_latent, self.sign_l, self.sign_r, n_bits=self.scalar_n_bits,
+            )
+        elif self.quant_mode == "scalar_faithful":
+            # Per-group MSE-optimal uniform n-bit in the RHT basis (single-var
+            # vs trellis; fixed scale, only quantizer differs). ~2.125b @g128.
+            W_q = scalar_quant_faithful(
+                self.W_latent, self.sign_l, self.sign_r,
+                group_size=self.scalar_group_size, n_bits=self.scalar_n_bits,
+            )
         elif self.ip_mode:
             W_q = TrellisQuantSTE_IP.apply(self.W_latent, self.codebook_gpu)
         else:
@@ -222,6 +246,26 @@ class QuantizedLinear(nn.Module):
         if mode == "bcjr":
             assert not self.ip_mode, "BCJR requires ip_mode=False"
         self.quant_mode = mode
+
+    def set_scalar_mode(self, mode, group_size=128, n_bits=2):
+        """Switch to a scalar baseline arm. 'scalar_ctrl' (RHT + global scale,
+        2.0b) or 'scalar_faithful' (RHT basis, per-group MSE-optimal FIXED clip,
+        ~2.125b). Both train only W_latent via STE — no extra learnable params,
+        matching the trellis arm's fixed-scale treatment. ip_mode must be False."""
+        assert mode in ("scalar_ctrl", "scalar_faithful"), f"bad scalar mode {mode}"
+        assert not self.ip_mode, f"{mode} requires ip_mode=False"
+        self.quant_mode = mode
+        self.scalar_n_bits = int(n_bits)
+        self.scalar_group_size = int(group_size)
+        if mode == "scalar_faithful":
+            assert self.in_features % self.scalar_group_size == 0, (
+                f"in_features {self.in_features} not divisible by group "
+                f"{self.scalar_group_size}")
+
+    def scalar_extra_parameters(self):
+        """No extra learnable params in any scalar arm (clip is fixed
+        MSE-optimal, not learned). Kept for the trainable_parameters protocol."""
+        return []
 
     def _cached_W_q_with_ste_grad(self):
         """Return cached W_q with STE gradient flow attached to W_latent.
@@ -277,9 +321,18 @@ class QuantizedLinear(nn.Module):
         of current T. This only affects eval_forward output before the
         first training step and is a no-op on the gradient path."""
         with torch.no_grad():
-            if self.ip_mode:
+            if self.quant_mode == "scalar_ctrl":
+                W_q = scalar_quant_controlled(
+                    self.W_latent, self.sign_l, self.sign_r,
+                    n_bits=self.scalar_n_bits)
+            elif self.quant_mode == "scalar_faithful":
+                W_q = scalar_quant_faithful(
+                    self.W_latent, self.sign_l, self.sign_r,
+                    group_size=self.scalar_group_size, n_bits=self.scalar_n_bits)
+            elif self.ip_mode:
                 W_q = TrellisQuantSTE_IP.apply(self.W_latent, self.codebook_gpu)
             else:
+                # 'ste' and 'bcjr' both harden through the trellis STE quantizer.
                 W_q = TrellisQuantSTE.apply(
                     self.W_latent, self.sign_l, self.sign_r, self.codebook_gpu,
                 )
