@@ -35,3 +35,9 @@ venv/
 
 # Local source builds (installed via pip install .)
 fast-hadamard-transform/
+
+# secrets / local — never commit
+wallet_recr
+claude.md
+paper/*.aux
+paper/*.out
