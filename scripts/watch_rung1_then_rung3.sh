@@ -25,7 +25,17 @@ while true; do
         --weights-dir cache/llama_bcjr_full_greedy --seq-len 2048 \
         --kv-mode turboquant --key-bits 3 --val-bits 2 \
         2>&1 | tee logs/kv_composition_auto.log
-    echo "[watch] ALL DONE. Rung3: logs/rung3_auto.log | sweep: logs/multilayer_summary.log | KV: logs/kv_composition_auto.log"
+    echo "[watch] → drift-budget analysis: does basin-escape predict greedy reversals?"
+    python3 -m src.eval.drift_budget_analysis \
+        --weights-dir cache/llama_bcjr_full_greedy \
+        2>&1 | tee logs/drift_budget_auto.log
+    echo "[watch] → FREE local isolated-BCJR diagnostic: L11,L13 × 2 seeds (chunk 8)"
+    echo "[watch]   answers 'back-half trouble = the layer, or the greedy accumulation?'"
+    source venv/bin/activate 2>/dev/null || true
+    CHUNK=8 LAYERS="11 13" SEEDS="0 1" bash vast/bcjr_amenability_sweep.sh \
+        2>&1 | tee logs/amenability_local_auto.log
+    echo "[watch] ALL DONE. Rung3: logs/rung3_auto.log | sweep: logs/multilayer_summary.log"
+    echo "[watch]   KV: logs/kv_composition_auto.log | diagnostic: logs/amenability_local_auto.log"
     exit 0
   fi
   # liveness: is the greedy trainer still running?
